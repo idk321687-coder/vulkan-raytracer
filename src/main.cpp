@@ -157,6 +157,15 @@ private:
     VkDeviceMemory storageMem_      = VK_NULL_HANDLE;
     VkImageView    storageView_     = VK_NULL_HANDLE;
 
+    // ----- Accumulation image (temporal convergence) -----
+    VkImage        accumImage_      = VK_NULL_HANDLE;
+    VkDeviceMemory accumMem_        = VK_NULL_HANDLE;
+    VkImageView    accumView_       = VK_NULL_HANDLE;
+    uint32_t       accumCount_      = 0;
+    float          prevCamPos_[3]   = {0.f, 0.f, 0.f};
+    float          prevYaw_         = -999.f;
+    float          prevPitch_       = -999.f;
+
     // ----- Compute pipeline -----
     VkDescriptorSetLayout descLayout_   = VK_NULL_HANDLE;
     VkPipelineLayout      pipeLayout_   = VK_NULL_HANDLE;
@@ -520,20 +529,59 @@ private:
         vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
         VK_CHECK(vkCreateImageView(device_, &vi, nullptr, &storageView_));
+
+        // --- Accumulation image (RGBA32F) ---
+        VkImageCreateInfo aici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        aici.imageType     = VK_IMAGE_TYPE_2D;
+        aici.format        = VK_FORMAT_R32G32B32A32_SFLOAT;
+        aici.extent        = {swapExtent_.width, swapExtent_.height, 1};
+        aici.mipLevels     = 1;
+        aici.arrayLayers   = 1;
+        aici.samples       = VK_SAMPLE_COUNT_1_BIT;
+        aici.tiling        = VK_IMAGE_TILING_OPTIMAL;
+        aici.usage         = VK_IMAGE_USAGE_STORAGE_BIT;
+        aici.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+        aici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        VK_CHECK(vkCreateImage(device_, &aici, nullptr, &accumImage_));
+
+        VkMemoryRequirements amemReq;
+        vkGetImageMemoryRequirements(device_, accumImage_, &amemReq);
+
+        VkMemoryAllocateInfo aai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        aai.allocationSize  = amemReq.size;
+        aai.memoryTypeIndex = findMemoryType(physDev_, amemReq.memoryTypeBits,
+                                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        VK_CHECK(vkAllocateMemory(device_, &aai, nullptr, &accumMem_));
+        VK_CHECK(vkBindImageMemory(device_, accumImage_, accumMem_, 0));
+
+        VkImageViewCreateInfo avi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        avi.image    = accumImage_;
+        avi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        avi.format   = VK_FORMAT_R32G32B32A32_SFLOAT;
+        avi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+        VK_CHECK(vkCreateImageView(device_, &avi, nullptr, &accumView_));
     }
 
     // ----- Descriptor set layout -----
 
     void createDescriptorSetLayout() {
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding         = 0;
-        binding.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        binding.descriptorCount = 1;
-        binding.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+        VkDescriptorSetLayoutBinding bindings[2]{};
+        bindings[0].binding         = 0;
+        bindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+
+        bindings[1].binding         = 1;
+        bindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        bindings[1].descriptorCount = 1;
+        bindings[1].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
 
         VkDescriptorSetLayoutCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-        ci.bindingCount = 1;
-        ci.pBindings    = &binding;
+        ci.bindingCount = 2;
+        ci.pBindings    = bindings;
 
         VK_CHECK(vkCreateDescriptorSetLayout(device_, &ci, nullptr, &descLayout_));
     }
@@ -582,7 +630,7 @@ private:
     void createDescriptorPool() {
         VkDescriptorPoolSize poolSize{};
         poolSize.type            = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        poolSize.descriptorCount = 1;
+        poolSize.descriptorCount = 2;
 
         VkDescriptorPoolCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         ci.maxSets       = 1;
@@ -600,18 +648,29 @@ private:
 
         VK_CHECK(vkAllocateDescriptorSets(device_, &ai, &descSet_));
 
-        VkDescriptorImageInfo imgInfo{};
-        imgInfo.imageView   = storageView_;
-        imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        VkDescriptorImageInfo imgInfos[2]{};
+        imgInfos[0].imageView   = storageView_;
+        imgInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        write.dstSet          = descSet_;
-        write.dstBinding      = 0;
-        write.descriptorCount = 1;
-        write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        write.pImageInfo      = &imgInfo;
+        imgInfos[1].imageView   = accumView_;
+        imgInfos[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-        vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet          = descSet_;
+        writes[0].dstBinding      = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[0].pImageInfo      = &imgInfos[0];
+
+        writes[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet          = descSet_;
+        writes[1].dstBinding      = 1;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[1].pImageInfo      = &imgInfos[1];
+
+        vkUpdateDescriptorSets(device_, 2, writes, 0, nullptr);
     }
 
     // ----- Commands -----
@@ -658,22 +717,40 @@ private:
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         VK_CHECK(vkBeginCommandBuffer(cmd, &bi));
 
-        // --- 1. Transition storage image → GENERAL ---
+        // --- 1. Transition storage and accumulation images → GENERAL ---
         {
-            VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-            b.srcAccessMask       = 0;
-            b.dstAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
-            b.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
-            b.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
-            b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            b.image               = storageImage_;
-            b.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            VkImageMemoryBarrier barriers[2]{};
+
+            barriers[0].sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barriers[0].srcAccessMask       = 0;
+            barriers[0].dstAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
+            barriers[0].oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
+            barriers[0].newLayout           = VK_IMAGE_LAYOUT_GENERAL;
+            barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barriers[0].image               = storageImage_;
+            barriers[0].subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+            barriers[1].sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            if (accumCount_ == 0) {
+                barriers[1].srcAccessMask   = 0;
+                barriers[1].dstAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
+                barriers[1].oldLayout       = VK_IMAGE_LAYOUT_UNDEFINED;
+            } else {
+                barriers[1].srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
+                barriers[1].dstAccessMask   = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                barriers[1].oldLayout       = VK_IMAGE_LAYOUT_GENERAL;
+            }
+            barriers[1].newLayout           = VK_IMAGE_LAYOUT_GENERAL;
+            barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barriers[1].image               = accumImage_;
+            barriers[1].subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
             vkCmdPipelineBarrier(cmd,
-                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                0, 0, nullptr, 0, nullptr, 1, &b);
+                0, 0, nullptr, 0, nullptr, 2, barriers);
         }
 
         // --- 2. Dispatch compute ---
@@ -699,12 +776,7 @@ private:
         pc.camUp[2]  = up[2];        pc.camUp[3]  = tanf(cam_.fov * 0.5f * 3.14159265f / 180.f);
         pc.camRight[0] = right[0];   pc.camRight[1] = right[1];
         pc.camRight[2] = right[2];
-
-        // Pack frame count as float (bit-preserving uint→float)
-        uint32_t fc = frameCount_;
-        float fcf;
-        memcpy(&fcf, &fc, sizeof(float));
-        pc.camRight[3] = fcf;
+        pc.camRight[3] = static_cast<float>(accumCount_);
 
         vkCmdPushConstants(cmd, pipeLayout_, VK_SHADER_STAGE_COMPUTE_BIT,
                            0, sizeof(PushConstants), &pc);
@@ -849,10 +921,34 @@ private:
     // =================================================================
 
     void cleanupSwapchain() {
-        vkDestroyImageView(device_, storageView_, nullptr);
-        vkDestroyImage(device_, storageImage_, nullptr);
-        vkFreeMemory(device_, storageMem_, nullptr);
-        vkDestroySwapchainKHR(device_, swapchain_, nullptr);
+        if (accumView_ != VK_NULL_HANDLE) {
+            vkDestroyImageView(device_, accumView_, nullptr);
+            accumView_ = VK_NULL_HANDLE;
+        }
+        if (accumImage_ != VK_NULL_HANDLE) {
+            vkDestroyImage(device_, accumImage_, nullptr);
+            accumImage_ = VK_NULL_HANDLE;
+        }
+        if (accumMem_ != VK_NULL_HANDLE) {
+            vkFreeMemory(device_, accumMem_, nullptr);
+            accumMem_ = VK_NULL_HANDLE;
+        }
+        if (storageView_ != VK_NULL_HANDLE) {
+            vkDestroyImageView(device_, storageView_, nullptr);
+            storageView_ = VK_NULL_HANDLE;
+        }
+        if (storageImage_ != VK_NULL_HANDLE) {
+            vkDestroyImage(device_, storageImage_, nullptr);
+            storageImage_ = VK_NULL_HANDLE;
+        }
+        if (storageMem_ != VK_NULL_HANDLE) {
+            vkFreeMemory(device_, storageMem_, nullptr);
+            storageMem_ = VK_NULL_HANDLE;
+        }
+        if (swapchain_ != VK_NULL_HANDLE) {
+            vkDestroySwapchainKHR(device_, swapchain_, nullptr);
+            swapchain_ = VK_NULL_HANDLE;
+        }
     }
 
     void recreateSwapchain() {
@@ -873,6 +969,8 @@ private:
         // Re-bind descriptor to new storage image view
         vkResetDescriptorPool(device_, descPool_, 0);
         createDescriptorSet();
+
+        accumCount_ = 0;
     }
 
     // =================================================================
@@ -915,6 +1013,30 @@ private:
             }
             if (keys_[GLFW_KEY_SPACE])       cam_.pos[1] += v;
             if (keys_[GLFW_KEY_LEFT_SHIFT])  cam_.pos[1] -= v;
+
+            // Check if camera moved to reset temporal accumulation
+            bool camMoved = false;
+            for (int k = 0; k < 512; ++k) {
+                if (keys_[k]) { camMoved = true; break; }
+            }
+            if (std::abs(cam_.pos[0] - prevCamPos_[0]) > 1e-4f ||
+                std::abs(cam_.pos[1] - prevCamPos_[1]) > 1e-4f ||
+                std::abs(cam_.pos[2] - prevCamPos_[2]) > 1e-4f ||
+                std::abs(cam_.yaw   - prevYaw_)        > 1e-3f ||
+                std::abs(cam_.pitch - prevPitch_)      > 1e-3f) {
+                camMoved = true;
+            }
+
+            if (camMoved) {
+                accumCount_ = 0;
+                prevCamPos_[0] = cam_.pos[0];
+                prevCamPos_[1] = cam_.pos[1];
+                prevCamPos_[2] = cam_.pos[2];
+                prevYaw_       = cam_.yaw;
+                prevPitch_     = cam_.pitch;
+            } else {
+                accumCount_++;
+            }
 
             drawFrame();
         }
