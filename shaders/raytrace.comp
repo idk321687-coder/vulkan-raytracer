@@ -1,0 +1,278 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0, rgba8) uniform writeonly image2D outputImage;
+
+layout(push_constant) uniform PC {
+    vec4 camPos;    // .xyz = position,  .w = time (seconds)
+    vec4 camDir;    // .xyz = forward,   .w = aspect ratio
+    vec4 camUp;     // .xyz = up vector, .w = tan(fov/2)
+    vec4 camRight;  // .xyz = right vec, .w = frame count (uint bits)
+};
+
+// ============================================================
+//  Constants
+// ============================================================
+#define MAX_BOUNCES  5
+#define NUM_SPHERES  9
+#define PI           3.14159265359
+#define EPS          0.001
+
+// ============================================================
+//  Random number generator  (PCG hash)
+// ============================================================
+uint rngState;
+
+uint pcgHash(uint v) {
+    uint state = v * 747796405u + 2891336453u;
+    uint word  = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float rand01() {
+    rngState = pcgHash(rngState);
+    return float(rngState) / 4294967296.0;
+}
+
+vec3 randInUnitSphere() {
+    for (int i = 0; i < 32; i++) {
+        vec3 p = vec3(rand01(), rand01(), rand01()) * 2.0 - 1.0;
+        if (dot(p, p) < 1.0) return p;
+    }
+    return vec3(0.0, 1.0, 0.0);
+}
+
+vec3 randOnHemisphere(vec3 n) {
+    vec3 v = normalize(randInUnitSphere());
+    return dot(v, n) > 0.0 ? v : -v;
+}
+
+// ============================================================
+//  Material & geometry
+// ============================================================
+struct Material {
+    vec3  albedo;
+    float metallic;
+    vec3  emission;
+    float roughness;
+};
+
+struct Sphere {
+    vec3  center;
+    float radius;
+    Material mat;
+};
+
+struct Hit {
+    float    t;
+    vec3     p;
+    vec3     n;
+    Material mat;
+};
+
+// ============================================================
+//  Scene
+// ============================================================
+Sphere scene[NUM_SPHERES];
+
+void buildScene() {
+    float t = camPos.w;
+
+    // 0  Large chrome sphere (center)
+    scene[0] = Sphere(vec3( 0.0, 1.0,  0.0), 1.0,
+        Material(vec3(0.95), 1.0, vec3(0.0), 0.0));
+
+    // 1  Red diffuse
+    scene[1] = Sphere(vec3(-2.5, 0.7, -1.0), 0.7,
+        Material(vec3(0.90, 0.10, 0.10), 0.0, vec3(0.0), 1.0));
+
+    // 2  Blue metallic
+    scene[2] = Sphere(vec3( 2.5, 0.8, -0.5), 0.8,
+        Material(vec3(0.10, 0.30, 0.90), 0.85, vec3(0.0), 0.08));
+
+    // 3  Green diffuse
+    scene[3] = Sphere(vec3( 1.0, 0.5,  2.0), 0.5,
+        Material(vec3(0.10, 0.80, 0.20), 0.0, vec3(0.0), 0.9));
+
+    // 4  Warm emissive light
+    scene[4] = Sphere(vec3(-1.0, 3.5,  2.0), 0.5,
+        Material(vec3(1.0), 0.0, vec3(10.0, 9.0, 7.0), 1.0));
+
+    // 5  Gold metallic
+    scene[5] = Sphere(vec3(-1.5, 0.4,  1.5), 0.4,
+        Material(vec3(0.95, 0.75, 0.20), 1.0, vec3(0.0), 0.18));
+
+    // 6  Purple — animated bob
+    float bob = sin(t * 1.5) * 0.35;
+    scene[6] = Sphere(vec3( 0.0, 0.6 + bob, 3.0), 0.6,
+        Material(vec3(0.60, 0.10, 0.80), 0.30, vec3(0.0), 0.5));
+
+    // 7  Cyan mirror
+    scene[7] = Sphere(vec3( 3.5, 0.6,  2.0), 0.6,
+        Material(vec3(0.60, 0.95, 0.95), 0.95, vec3(0.0), 0.03));
+
+    // 8  Cool emissive light
+    scene[8] = Sphere(vec3( 3.0, 4.0, -1.0), 0.4,
+        Material(vec3(1.0), 0.0, vec3(5.0, 7.0, 10.0), 1.0));
+}
+
+// ============================================================
+//  Intersections
+// ============================================================
+bool hitSphere(vec3 ro, vec3 rd, Sphere s, inout Hit h) {
+    vec3  oc = ro - s.center;
+    float a  = dot(rd, rd);
+    float hb = dot(oc, rd);           // half-b
+    float c  = dot(oc, oc) - s.radius * s.radius;
+    float disc = hb * hb - a * c;
+    if (disc < 0.0) return false;
+
+    float sqrtD = sqrt(disc);
+    float t = (-hb - sqrtD) / a;
+    if (t < EPS || t > h.t) {
+        t = (-hb + sqrtD) / a;
+        if (t < EPS || t > h.t) return false;
+    }
+    h.t   = t;
+    h.p   = ro + rd * t;
+    h.n   = (h.p - s.center) / s.radius;
+    h.mat = s.mat;
+    return true;
+}
+
+bool hitPlane(vec3 ro, vec3 rd, inout Hit h) {
+    // y = 0 ground plane
+    if (abs(rd.y) < EPS) return false;
+    float t = -ro.y / rd.y;
+    if (t < EPS || t > h.t) return false;
+
+    h.t = t;
+    h.p = ro + rd * t;
+    h.n = vec3(0.0, 1.0, 0.0);
+
+    // Checkerboard
+    ivec2 cell = ivec2(floor(h.p.xz));
+    bool white = ((cell.x + cell.y) & 1) == 0;
+    h.mat.albedo    = white ? vec3(0.85) : vec3(0.12);
+    h.mat.metallic  = 0.05;
+    h.mat.emission  = vec3(0.0);
+    h.mat.roughness = 0.7;
+    return true;
+}
+
+bool traceScene(vec3 ro, vec3 rd, inout Hit h) {
+    h.t = 1e30;
+    bool hit = false;
+    for (int i = 0; i < NUM_SPHERES; i++)
+        if (hitSphere(ro, rd, scene[i], h)) hit = true;
+    if (hitPlane(ro, rd, h)) hit = true;
+    return hit;
+}
+
+// ============================================================
+//  Sky
+// ============================================================
+vec3 skyColor(vec3 rd) {
+    float t = 0.5 * (rd.y + 1.0);
+    vec3 sky = mix(vec3(0.7, 0.5, 0.35),   // warm horizon
+                   vec3(0.15, 0.35, 0.75),  // blue zenith
+                   clamp(t, 0.0, 1.0));
+
+    // Sun disc + glow
+    vec3 sunDir = normalize(vec3(0.5, 0.35, -0.8));
+    float sd = max(dot(rd, sunDir), 0.0);
+    sky += vec3(1.0, 0.95, 0.8) * pow(sd, 512.0) * 8.0;
+    sky += vec3(1.0, 0.8, 0.5)  * pow(sd, 8.0)   * 0.4;
+    return sky;
+}
+
+// ============================================================
+//  Path tracer  (iterative)
+// ============================================================
+vec3 tracePath(vec3 ro, vec3 rd) {
+    vec3 throughput = vec3(1.0);
+    vec3 color      = vec3(0.0);
+
+    for (int bounce = 0; bounce <= MAX_BOUNCES; bounce++) {
+        Hit h;
+        if (!traceScene(ro, rd, h)) {
+            color += throughput * skyColor(rd);
+            break;
+        }
+
+        // Accumulate emission
+        color += throughput * h.mat.emission;
+        if (length(h.mat.emission) > 0.0) break;
+
+        // Scatter
+        if (rand01() < h.mat.metallic) {
+            // Specular / metallic reflection
+            vec3 refl = reflect(rd, h.n);
+            rd = normalize(refl + h.mat.roughness * randInUnitSphere());
+            if (dot(rd, h.n) <= 0.0) break;
+            throughput *= h.mat.albedo;
+        } else {
+            // Lambertian diffuse
+            rd = normalize(h.n + normalize(randInUnitSphere()));
+            if (dot(rd, rd) < 1e-8) rd = h.n;
+            throughput *= h.mat.albedo;
+        }
+
+        ro = h.p + h.n * EPS;
+
+        // Russian roulette after bounce 2
+        if (bounce > 1) {
+            float p = max(max(throughput.x, throughput.y), throughput.z);
+            if (rand01() > p) break;
+            throughput /= p;
+        }
+    }
+    return color;
+}
+
+// ============================================================
+//  Main
+// ============================================================
+void main() {
+    ivec2 px   = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(outputImage);
+    if (px.x >= size.x || px.y >= size.y) return;
+
+    // Seed RNG
+    uint frame = floatBitsToUint(camRight.w);
+    rngState = pcgHash(uint(px.x) + uint(px.y) * uint(size.x)
+                       + frame * uint(size.x) * uint(size.y));
+
+    buildScene();
+
+    float aspect     = camDir.w;
+    float tanHalfFov = camUp.w;
+
+    // 4-sample anti-aliased path trace
+    const int SPP = 4;
+    vec3 col = vec3(0.0);
+
+    for (int s = 0; s < SPP; s++) {
+        vec2 jitter = vec2(rand01(), rand01()) - 0.5;
+        vec2 uv = (vec2(px) + 0.5 + jitter) / vec2(size);
+        uv = uv * 2.0 - 1.0;
+        uv.y = -uv.y;
+
+        vec3 rd = normalize(camDir.xyz
+                            + uv.x * aspect * tanHalfFov * camRight.xyz
+                            + uv.y * tanHalfFov * camUp.xyz);
+
+        col += tracePath(camPos.xyz, rd);
+    }
+    col /= float(SPP);
+
+    // ACES-ish tonemapping
+    col = col / (col + 1.0);
+
+    // Gamma
+    col = pow(col, vec3(1.0 / 2.2));
+
+    imageStore(outputImage, px, vec4(col, 1.0));
+}
+

@@ -1,0 +1,11 @@
+build/
+build-*/
+*.spv
+*.o
+*.obj
+*.d
+*.exe
+*.zip
+.cache/
+compile_commands.json
+
