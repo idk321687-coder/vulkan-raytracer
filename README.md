@@ -6,7 +6,7 @@ Aurora is a self-hostable, frozen-neon Minecraft minigame network targeting Java
 
 Requirements: Windows PowerShell, a **Java 21-or-newer JDK** on `PATH`, and a Minecraft 1.21.11 client. The plugin is compiled for Java 21; a newer JDK such as Java 25 can build it and is used to launch Paper (subject to Paper's runtime compatibility). From the repository, double-click `scripts\\run.bat` or run it from Command Prompt/PowerShell. On first run the script downloads Gradle and the latest Paper build for 1.21.11, builds the plugin, and prepares `server-local\\`. It will ask you to review and accept the Minecraft EULA before starting.
 
-Connect to `localhost:25565`. Stop the server with Ctrl+C. Run `scripts\\run.bat` again for subsequent starts; the Paper jar, downloaded Gradle, plugin output, and world data are retained locally. Generated files are ignored by Git.
+Connect to `localhost:25565`. Stop the server with Ctrl+C. Run `scripts\\run.bat` again for subsequent starts; Gradle is cached in `%LOCALAPPDATA%\\Aurora\\tools`, while the Paper jar, plugin output, and world data stay in `server-local\\`. Gradle dependencies are also cached in your normal user Gradle cache. These files are ignored by Git.
 
 If startup reports that Java is missing or older than 21, install a Java 21-or-newer JDK (for example, Temurin 21 or 25), make sure `java.exe` is on `PATH`, then open a fresh terminal. The first setup requires internet access; after Gradle and server dependencies have been downloaded, future starts use the local caches.
 

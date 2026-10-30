@@ -19,18 +19,32 @@ if ($javaMajor -lt 21) {
     throw "Aurora requires Java 21 or newer; detected Java $javaVersion. Install/select a newer JDK and retry."
 }
 
-$toolDir = Join-Path $root '.tools'
 $gradleVersion = '9.1.0'
+# Keep Gradle outside the checkout so it survives repo re-extraction or updates.
+if ($env:LOCALAPPDATA) {
+    $toolDir = Join-Path $env:LOCALAPPDATA 'Aurora\tools'
+} else {
+    $toolDir = Join-Path $root '.tools'
+}
 $gradleHome = Join-Path $toolDir "gradle-$gradleVersion"
 $gradleExe = Join-Path $gradleHome 'bin\gradle.bat'
 if (-not (Test-Path $gradleExe)) {
     New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
     $zipPath = Join-Path $toolDir "gradle-$gradleVersion-bin.zip"
-    if (-not (Test-Path $zipPath)) {
-        Write-Host "Downloading Gradle $gradleVersion..."
-        Invoke-WebRequest "https://services.gradle.org/distributions/gradle-$gradleVersion-bin.zip" -OutFile $zipPath
+    # Reuse a cache made by older script versions before downloading again.
+    $oldToolDir = Join-Path $root '.tools'
+    $oldGradleHome = Join-Path $oldToolDir "gradle-$gradleVersion"
+    $oldZipPath = Join-Path $oldToolDir "gradle-$gradleVersion-bin.zip"
+    if (Test-Path (Join-Path $oldGradleHome 'bin\gradle.bat')) {
+        Copy-Item -Path $oldGradleHome -Destination $toolDir -Recurse -Force
+    } else {
+        if (-not (Test-Path $zipPath) -and (Test-Path $oldZipPath)) { Copy-Item $oldZipPath $zipPath }
+        if (-not (Test-Path $zipPath)) {
+            Write-Host "Downloading Gradle $gradleVersion..."
+            Invoke-WebRequest "https://services.gradle.org/distributions/gradle-$gradleVersion-bin.zip" -OutFile $zipPath
+        }
+        Expand-Archive -Path $zipPath -DestinationPath $toolDir -Force
     }
-    Expand-Archive -Path $zipPath -DestinationPath $toolDir -Force
 }
 
 Write-Host 'Building AuroraLobby...'
