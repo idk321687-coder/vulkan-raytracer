@@ -14,6 +14,8 @@ docker compose up --build
 
 When the server reports that it is ready, connect to `localhost:25565`. The first launch downloads the pinned Minecraft server version and builds AuroraLobby, so it needs internet access. Subsequent starts reuse the local image and server data. Stop with Ctrl+C; persistent runtime data lives in ignored `server-data/`.
 
+**Windows:** install and start Docker Desktop, then double-click `scripts\\run.bat` (or run it from Command Prompt/PowerShell). It builds the server image and starts the server in the current window.
+
 To run detached: `docker compose up --build -d`; to stop: `docker compose down`.
 
 ## Current status
