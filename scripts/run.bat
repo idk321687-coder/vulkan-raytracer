@@ -2,19 +2,18 @@
 setlocal
 cd /d "%~dp0\.."
 
-where docker >nul 2>nul
+where powershell.exe >nul 2>nul
 if errorlevel 1 (
-  echo Docker is required. Install Docker Desktop with the Compose plugin, then run this file again.
-  echo If Docker Desktop is already installed, start it and wait until it is running.
+  echo Windows PowerShell is required to bootstrap the local server.
   pause
   exit /b 1
 )
 
-docker compose up --build
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-local.ps1"
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" (
   echo.
-  echo Aurora server exited with code %EXIT_CODE%.
+  echo Aurora local startup failed with exit code %EXIT_CODE%.
   pause
 )
 exit /b %EXIT_CODE%

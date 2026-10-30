@@ -1,3 +1,7 @@
+# Local Windows bootstrap cache and native server runtime
+.tools/
+server-local/
+
 # Runtime server data
 world/
 world_nether/
