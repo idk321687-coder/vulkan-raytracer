@@ -45,13 +45,14 @@ $paperJar = Join-Path $serverDir 'paper.jar'
 if (-not (Test-Path $paperJar)) {
     Write-Host 'Looking up the latest Paper build for Minecraft 1.21.11...'
     $version = '1.21.11'
-    $buildInfo = Invoke-RestMethod "https://api.papermc.io/v2/projects/paper/versions/$version/builds"
-    $build = $buildInfo.builds | Sort-Object build -Descending | Select-Object -First 1
-    if (-not $build) { throw "No Paper builds found for Minecraft $version." }
-    $downloadName = $build.downloads.application.name
-    $downloadUrl = "https://api.papermc.io/v2/projects/paper/versions/$version/builds/$($build.build)/downloads/$downloadName"
-    Write-Host "Downloading Paper $version build $($build.build)..."
-    Invoke-WebRequest $downloadUrl -OutFile $paperJar
+    $headers = @{ 'User-Agent' = 'AuroraServerBootstrap/1.0 (https://github.com/idk321687-coder/vulkan-raytracer)' }
+    $buildInfo = Invoke-RestMethod "https://fill.papermc.io/v3/projects/paper/versions/$version/builds" -Headers $headers
+    $build = $buildInfo | Where-Object { $_.channel -eq 'STABLE' } | Select-Object -First 1
+    if (-not $build) { throw "No stable Paper builds found for Minecraft $version." }
+    $download = $build.downloads.'server:default'
+    if (-not $download.url) { throw "Paper API returned no server download for Minecraft $version build $($build.id)." }
+    Write-Host "Downloading Paper $version build $($build.id)..."
+    Invoke-WebRequest $download.url -Headers $headers -OutFile $paperJar
 }
 
 $pluginJar = Join-Path $root 'packages\lobby\build\libs\lobby-0.1.0.jar'
