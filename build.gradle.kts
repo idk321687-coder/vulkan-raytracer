@@ -13,11 +13,9 @@ allprojects {
 
 subprojects {
     apply(plugin = "java")
-    extensions.configure<JavaPluginExtension> {
-        toolchain.languageVersion.set(JavaLanguageVersion.of(21))
-    }
     tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
+        // Compile Java 21 bytecode while allowing newer installed JDKs (for example Java 25).
         options.release.set(21)
     }
 }

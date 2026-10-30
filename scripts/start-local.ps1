@@ -14,12 +14,13 @@ if (-not $javaVersionMatch) {
     throw 'Could not read the Java version. Install a Java 21 JDK and ensure java.exe is on PATH.'
 }
 $javaVersion = $javaVersionMatch.Matches[0].Groups[1].Value
-if ($javaVersion -ne '21') {
-    throw "Aurora targets Java 21; detected Java $javaVersion. Install/select a Java 21 JDK and retry."
+$javaMajor = [int]($javaVersion -split '\.')[0]
+if ($javaMajor -lt 21) {
+    throw "Aurora requires Java 21 or newer; detected Java $javaVersion. Install/select a newer JDK and retry."
 }
 
 $toolDir = Join-Path $root '.tools'
-$gradleVersion = '8.14'
+$gradleVersion = '9.1.0'
 $gradleHome = Join-Path $toolDir "gradle-$gradleVersion"
 $gradleExe = Join-Path $gradleHome 'bin\gradle.bat'
 if (-not (Test-Path $gradleExe)) {
