@@ -1,9 +1,9 @@
 # Aurora implementation roadmap
 
-This is the incremental build plan; only the first bootstrap slice is present today.
+This is the incremental build plan. The bootstrap, early Bed Wars, 20-track racing prototype, and initial procedural hub slices are present; full product acceptance criteria are not met yet.
 
 1. Repository wipe, Paper Compose boot, and joinable lobby foundation.
-2. Hub presentation, `/play` menu, queue lifecycle, and transfer/routing. The current menu and local queue-selection UI are an early partial slice; they do not launch matches.
+2. Hub presentation, `/play` menu, queue lifecycle, and transfer/routing. A first procedural floating hub and local mode menu are present; dedicated queue routing remains incomplete.
 3. Bed Wars match prototype: current implementation supports two-team Classic/Chill/Rush queue starts, bridging, beds, respawns, eliminations, and match-end return. Next work: isolated arena lifecycle, complete format/team setup, and tests.
 4. Bed Wars shop, generators, Chill Wars (PvP disabled), and Rush.
 5. Ice Boat Racing: early solo and 1v1 modes now randomly choose from 20 generated oval circuits, with easy/normal/hard course widths and ordered checkpoints. Still needed: genuinely distinct course layouts, personal-best persistence, lap/split HUD, ghosts, boosts, podium, and tests.

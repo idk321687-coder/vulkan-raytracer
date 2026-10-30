@@ -14,6 +14,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -31,6 +32,7 @@ public final class AuroraLobby extends JavaPlugin implements Listener {
     private final Set<UUID> pvpOptOut = new HashSet<>();
     private BedWarsManager bedWars;
     private IceBoatManager iceBoats;
+    private HubBuilder hubBuilder;
     private static final String MENU_TITLE = "<dark_aqua><bold>AURORA <dark_gray>» <aqua>PLAY";
     private static final String RACE_MENU_TITLE = "<dark_aqua><bold>ICE RACING <dark_gray>» <aqua>FORMAT";
 
@@ -40,6 +42,10 @@ public final class AuroraLobby extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         bedWars = new BedWarsManager(this);
         iceBoats = new IceBoatManager(this);
+        hubBuilder = new HubBuilder(this);
+        World hubWorld = getServer().getWorld(getConfig().getString("spawn.world", "world"));
+        if (hubWorld != null) hubBuilder.build(hubWorld);
+        else getLogger().info("Hub generation is waiting for the configured world to load.");
         getLogger().info("Aurora lobby online — frozen-neon edition");
     }
 
@@ -85,6 +91,13 @@ public final class AuroraLobby extends JavaPlugin implements Listener {
             return true;
         }
         return false;
+    }
+
+    @EventHandler
+    public void onWorldLoad(WorldLoadEvent event) {
+        if (event.getWorld().getName().equals(getConfig().getString("spawn.world", "world"))) {
+            hubBuilder.build(event.getWorld());
+        }
     }
 
     @EventHandler
