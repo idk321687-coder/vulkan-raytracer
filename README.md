@@ -1,75 +1,29 @@
-# Vulkan Compute-Shader Ray Tracer
+# Aurora
 
-A real-time GPU path tracer built entirely with Vulkan compute shaders. No rasterization pipeline — every pixel is ray-traced on the GPU.
+Aurora is a self-hostable, frozen-neon Minecraft minigame network targeting Java Edition 1.21.11. Bed Wars and Ice Boat Racing are the flagship modes; this repository is being rebuilt in reviewable increments.
 
-![screenshot](screenshot.png)
+## Quick start
 
-## Features
+Requirements: Docker Engine with the Compose plugin, and a Minecraft 1.21.11 client.
 
-- **GPU path tracing** via a Vulkan compute shader (4 samples/pixel, 5 bounces)
-- **Materials**: metallic reflections, diffuse Lambertian, emissive light sources
-- **Checkerboard ground plane** with subtle reflections
-- **ACES tone mapping** and gamma correction
-- **Animated scene** (bobbing sphere)
-- **FPS camera** — WASD + mouse to fly around
-- **Window resizing** with automatic swapchain recreation
-
-## Scene
-
-| Sphere | Material |
-|--------|----------|
-| Large chrome | Perfect mirror |
-| Red | Diffuse |
-| Blue | Metallic (low roughness) |
-| Green | Diffuse |
-| Gold | Metallic |
-| Purple | Semi-metallic, animated bob |
-| Cyan | Near-perfect mirror |
-| 2× emissive | Warm + cool area lights |
-
-## Controls
-
-| Key | Action |
-|-----|--------|
-| **W/A/S/D** | Move forward/left/back/right |
-| **Space** | Move up |
-| **Shift** | Move down |
-| **Mouse** | Look around |
-| **ESC** | Toggle mouse capture |
-| **Click** | Re-capture mouse |
-
-## Prerequisites
-
-```bash
-sudo apt install libglfw3-dev libvulkan-dev glslang-tools cmake build-essential
+```sh
+git clone <repository-url>
+cd <repository-directory>
+docker compose up --build
 ```
 
-## Build & Run
+When the server reports that it is ready, connect to `localhost:25565`. The first launch downloads the pinned Minecraft server version and builds AuroraLobby, so it needs internet access. Subsequent starts reuse the local image and server data. Stop with Ctrl+C; persistent runtime data lives in ignored `server-data/`.
 
-```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-./raytracer
-```
+To run detached: `docker compose up --build -d`; to stop: `docker compose down`.
 
-## How It Works
+## Current status
 
-1. A **compute shader** (`shaders/raytrace.comp`) is dispatched over every pixel
-2. Each invocation casts 4 jittered rays through the pixel for anti-aliasing
-3. Rays bounce up to 5 times — specular or diffuse depending on material
-4. Russian roulette terminates low-energy paths early
-5. The result is written to a **storage image**, then blitted to the swapchain for display
-6. Push constants pass camera state (position, orientation, time) each frame
+The repository wipe and initial boot scaffold are complete. `/play bedwars classic|chill|rush` launches an early two-team Bed Wars prototype when at least two players join the same variant. It supports bridge building, bed breaking, basic team respawns, eliminations, and victory/return-to-lobby. Chill Wars cancels direct player-vs-player damage. Ice Boat Racing now has `/play iceboats solo [easy|normal|hard]` and `/play iceboats 1v1 [easy|normal|hard]`: each run randomly selects one of 20 generated oval circuits, builds it in the configured world, and enforces four sequential checkpoints before the finish. The difficulty changes course width. The racing feature is an early fun prototype: no persistent PBs, ghost lines, podiums, boosts, splits, or polished map cleanup yet. Bed Wars still lacks its shop/generators/upgrades; Velocity, persistence, and resource pack are not implemented. `/settings pvp off` blocks PvP Bed Wars queue entry for that session. See `docs/ROADMAP.md`; the full acceptance criteria are not yet met.
 
-## Project Structure
+## Development
 
-```
-├── CMakeLists.txt          # Build system (finds Vulkan, GLFW, compiles shaders)
-├── shaders/
-│   └── raytrace.comp       # GLSL compute shader — the actual path tracer
-├── src/
-│   └── main.cpp            # Vulkan setup, window, camera, render loop
-└── README.md
-```
+The plugin is a Gradle Java 21 project under `packages/lobby`. Build it with `gradle :lobby:jar`. Paper API is compile-only; Adventure MiniMessage is bundled. The Docker build compiles the plugin and installs it into the server image.
 
+## License
+
+See repository license information when available.

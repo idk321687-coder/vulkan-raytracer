@@ -1,11 +1,16 @@
-build/
-build-*/
-*.spv
-*.o
-*.obj
-*.d
-*.exe
-*.zip
-.cache/
-compile_commands.json
+# Runtime server data
+world/
+world_nether/
+world_the_end/
+cache/
+plugins/*.jar
+plugins/**/data/
+logs/
+*.log
+.env
+pack.zip
 
+# Build output
+.gradle/
+build/
+**/build/
