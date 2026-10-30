@@ -1,0 +1,24 @@
+services:
+  aurora:
+    build: .
+    container_name: aurora
+    ports:
+      - "25565:25565"
+    environment:
+      EULA: "TRUE"
+      TYPE: PAPER
+      VERSION: "1.21.11"
+      MEMORY: "2G"
+      ONLINE_MODE: "TRUE"
+      MOTD: "§3✦ §bAURORA §8| §fFrozen-neon minigames"
+      DIFFICULTY: peaceful
+      SPAWN_PROTECTION: 0
+      ENABLE_RCON: "false"
+      USE_AIKAR_FLAGS: "true"
+      VIEW_DISTANCE: 8
+      SIMULATION_DISTANCE: 6
+      PLUGINS: ""
+    volumes:
+      - ./server-data:/data
+    restart: unless-stopped
+    stop_grace_period: 1m

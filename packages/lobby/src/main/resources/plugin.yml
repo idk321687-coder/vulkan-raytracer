@@ -1,0 +1,20 @@
+name: AuroraLobby
+version: 0.1.0
+main: dev.aurora.lobby.AuroraLobby
+api-version: '1.21'
+authors: [Aurora]
+description: Frozen-neon lobby foundations for Aurora.
+commands:
+  play:
+    description: Browse modes or select a queue.
+    usage: /play bedwars [classic|chill|rush] | /play iceboats [solo|1v1] [easy|normal|hard] | /play leave
+    permission: aurora.play
+  settings:
+    description: Configure your PvP matchmaking preference.
+    usage: /settings pvp on|off
+    permission: aurora.settings
+permissions:
+  aurora.play:
+    default: true
+  aurora.settings:
+    default: true

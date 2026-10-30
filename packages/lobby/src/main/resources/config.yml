@@ -1,0 +1,10 @@
+spawn:
+  world: world
+  x: 0.5
+  y: 121.1
+  z: 0.5
+  yaw: 0.0
+  pitch: 0.0
+hub:
+  platform-y: 120
+  generated: false
