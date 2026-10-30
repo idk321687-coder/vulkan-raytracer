@@ -6,8 +6,14 @@ $javaCommand = Get-Command java -ErrorAction SilentlyContinue
 if (-not $javaCommand) {
     throw 'Java 21 is required. Install a Java 21 JDK (for example, Temurin 21), add java.exe to PATH, then run scripts\run.bat again.'
 }
-$javaVersionLine = (& java -XshowSettings:properties -version 2>&1 | Select-String 'java.specification.version' | Select-Object -First 1).ToString()
-$javaVersion = ($javaVersionLine -split '=')[-1].Trim()
+# PowerShell 5 treats Java's version text on stderr as a terminating native-command error
+# when ErrorActionPreference is Stop. Capture the merged streams through cmd.exe instead.
+$javaOutput = & $env:ComSpec /d /c 'java -XshowSettings:properties -version 2>&1'
+$javaVersionMatch = $javaOutput | Select-String 'java.specification.version\s*=\s*([0-9.]+)' | Select-Object -First 1
+if (-not $javaVersionMatch) {
+    throw 'Could not read the Java version. Install a Java 21 JDK and ensure java.exe is on PATH.'
+}
+$javaVersion = $javaVersionMatch.Matches[0].Groups[1].Value
 if ($javaVersion -ne '21') {
     throw "Aurora targets Java 21; detected Java $javaVersion. Install/select a Java 21 JDK and retry."
 }
@@ -27,7 +33,8 @@ if (-not (Test-Path $gradleExe)) {
 }
 
 Write-Host 'Building AuroraLobby...'
-& $gradleExe --no-daemon --console=plain :lobby:jar
+$gradleCommand = '"' + $gradleExe + '" --no-daemon --console=plain :lobby:jar 2>&1'
+& $env:ComSpec /d /c $gradleCommand
 if ($LASTEXITCODE -ne 0) { throw 'Gradle build failed.' }
 
 $serverDir = Join-Path $root 'server-local'
@@ -83,5 +90,6 @@ Write-Host ''
 Write-Host 'Starting Aurora locally on port 25565. Connect with Minecraft 1.21.11 at localhost:25565.'
 Write-Host 'Stop the server with Ctrl+C. Runtime files are in server-local\.'
 Set-Location $serverDir
-& java -Xms2G -Xmx2G -XX:+UseG1GC -jar $paperJar nogui
+$serverCommand = 'java -Xms2G -Xmx2G -XX:+UseG1GC -jar "' + $paperJar + '" nogui 2>&1'
+& $env:ComSpec /d /c $serverCommand
 exit $LASTEXITCODE
